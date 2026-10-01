@@ -1,0 +1,54 @@
+services:
+  db:
+    image: postgres:16.6-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-postgres_ops}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres_ops}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./migrations:/workspace/migrations:ro
+      - ./schema:/workspace/schema:ro
+      - ./functions:/workspace/functions:ro
+      - ./procedures:/workspace/procedures:ro
+      - ./seed:/workspace/seed:ro
+      - ./tests:/workspace/tests:ro
+      - ./queries:/workspace/queries:ro
+      - ./monitoring:/workspace/monitoring:ro
+      - ./performance:/workspace/performance:ro
+      - ./docker/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+    networks:
+      - database_lab
+
+  generator:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.tools
+    profiles: ["tools"]
+    environment:
+      PGHOST: db
+      PGPORT: 5432
+      PGUSER: ${POSTGRES_USER:-postgres_ops}
+      PGPASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
+      PGDATABASE: ${POSTGRES_DB:-postgres_ops}
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - database_lab
+
+volumes:
+  postgres_data:
+
+networks:
+  database_lab:
+    driver: bridge

@@ -1,0 +1,16 @@
+CREATE INDEX IF NOT EXISTS idx_users_org_active ON users (organization_id, active);
+CREATE INDEX IF NOT EXISTS idx_users_last_seen ON users (last_seen_at);
+CREATE INDEX IF NOT EXISTS idx_tickets_open_priority_updated ON tickets (priority_id, updated_at) WHERE status IN ('open', 'pending');
+CREATE INDEX IF NOT EXISTS idx_tickets_org_created ON tickets (organization_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_tickets_service_status_created ON tickets (service_id, status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_tickets_category_created ON tickets (category_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_tickets_metadata_gin ON tickets USING GIN (metadata);
+CREATE INDEX IF NOT EXISTS idx_comments_ticket_created ON ticket_comments (ticket_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_status_history_ticket_changed ON ticket_status_history (ticket_id, changed_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_assignments_one_active_ticket ON assignments (ticket_id) WHERE unassigned_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_assignments_agent_active ON assignments (agent_id, assigned_at DESC) WHERE unassigned_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_incidents_service_started ON incidents (service_id, started_at DESC);
+CREATE INDEX IF NOT EXISTS idx_system_events_created ON system_events (created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_system_events_service_type ON system_events (service_id, event_type, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_audit_entity_created ON audit_logs (entity_type, entity_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_audit_request_id ON audit_logs (request_id);

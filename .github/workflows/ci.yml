@@ -1,0 +1,98 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16.6-alpine
+        env:
+          POSTGRES_DB: postgres_ops
+          POSTGRES_USER: postgres_ops
+          POSTGRES_PASSWORD: postgres_ops_ci_only
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres_ops -d postgres_ops"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+
+    env:
+      DATABASE_URL: postgresql://postgres_ops:postgres_ops_ci_only@localhost:5432/postgres_ops
+      PGPASSWORD: postgres_ops_ci_only
+      POSTGRES_PASSWORD: postgres_ops_ci_only
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Install validation dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client shellcheck
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Validate Python and Bash syntax
+        run: |
+          python -m py_compile scripts/generate_data.py
+          find backup docker scripts performance -type f -name '*.sh' -print0 | xargs -0 -r bash -n
+          find backup docker scripts performance -type f -name '*.sh' -print0 | xargs -0 -r shellcheck
+
+      - name: Validate Docker Compose
+        run: docker compose config --quiet
+
+      - name: Apply migrations twice
+        run: |
+          bash ./scripts/apply_migrations.sh
+          bash ./scripts/apply_migrations.sh
+
+      - name: Load reference data twice
+        run: |
+          bash ./scripts/seed.sh
+          bash ./scripts/seed.sh
+
+      - name: Generate deterministic test data
+        run: |
+          python scripts/generate_data.py \
+            --reset-generated \
+            --seed 7 \
+            --organizations 6 \
+            --users-per-org 5 \
+            --agents 4 \
+            --tickets 500 \
+            --incidents 30 \
+            --events 100
+
+      - name: Run database tests
+        run: bash ./scripts/test.sh
+
+      - name: Execute query files
+        run: bash ./scripts/validate_sql.sh
+
+      - name: Verify backup and restore utilities
+        run: |
+          mkdir -p /tmp/postgresql-operations-backups
+          backup_file="$(PGHOST=localhost PGPORT=5432 PGUSER=postgres_ops PGDATABASE=postgres_ops BACKUP_DIR=/tmp/postgresql-operations-backups RETENTION_DAYS=7 bash ./backup/backup.sh)"
+          PGHOST=localhost PGPORT=5432 PGUSER=postgres_ops BACKUP_FILE="$backup_file" bash ./backup/verify_restore.sh
+
+      - name: Smoke-test performance SQL
+        run: |
+          for file in performance/[0-9][0-9]_*.sql; do
+            psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f "$file" >/dev/null
+          done
